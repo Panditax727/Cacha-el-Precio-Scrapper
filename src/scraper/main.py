@@ -26,6 +26,7 @@ from scraper.infrastructure.database.repositories.product_repository import (
 )
 from scraper.infrastructure.http.client import HttpClient
 from scraper.infrastructure.http.sitemap import leer_sitemap
+from scraper.scrapers.base.scraper_http import ScraperHttp
 from scraper.scrapers.converse.scraper import ConverseScraper
 from scraper.scrapers.falabella.scraper import FalabellaScraper
 from scraper.scrapers.hites.scraper import HitesScraper
@@ -61,7 +62,16 @@ def construir_repositorio(cfg: Settings):
         RepositorioPostgres,
     )
 
-    return RepositorioPostgres(psycopg.connect(cfg.database_url))
+    try:
+        conexion = psycopg.connect(cfg.database_url, connect_timeout=10)
+    except psycopg.OperationalError as e:
+        # Un job por cron deja esto en su log. Una traza de Python de 15
+        # lineas no dice que hacer; este mensaje si.
+        log.error("no se pudo conectar a PostgreSQL: %s", str(e).splitlines()[0])
+        log.error("  DATABASE_URL = %s", cfg.database_url)
+        log.error("  Si usas el compose:  docker compose up -d db")
+        raise SystemExit(3) from None
+    return RepositorioPostgres(conexion)
 
 
 def construir_servicio(cfg: Settings, repo) -> ScraperService:
@@ -92,16 +102,21 @@ def sitemap_de(cfg: Settings, tienda: str) -> str | None:
     }.get(tienda)
 
 
+# Registro unico de tiendas: lo usan tanto el filtro de URLs como el
+# comando "tiendas", que no debe necesitar la base para responder.
+_TIENDAS: dict[str, type[ScraperHttp]] = {
+    "converse": ConverseScraper,
+    "falabella": FalabellaScraper,
+    "paris": ParisScraper,
+    "ripley": RipleyScraper,
+    "hites": HitesScraper,
+    "sparta": SpartaScraper,
+}
+
+
 def _solo_fichas(tienda: str, urls: list[str]) -> list[str]:
     """Aplica el filtro de URLs del scraper de esa tienda, si tiene."""
-    from scraper.scrapers.base.scraper_http import ScraperHttp
-
-    clases: dict[str, type[ScraperHttp]] = {
-        "converse": ConverseScraper, "falabella": FalabellaScraper,
-        "paris": ParisScraper, "ripley": RipleyScraper,
-        "hites": HitesScraper, "sparta": SpartaScraper,
-    }
-    clase = clases.get(tienda)
+    clase = _TIENDAS.get(tienda)
     return clase.urls_de_producto(urls) if clase else urls
 
 
@@ -158,20 +173,10 @@ def main(argv: list[str] | None = None) -> int:
         format="%(asctime)s %(levelname)-7s %(name)s: %(message)s",
     )
 
-    repo = construir_repositorio(cfg)
-
-    if args.comando == "esquema":
-        if not hasattr(repo, "crear_esquema"):
-            log.error("el esquema solo se puede crear contra PostgreSQL")
-            return 2
-        repo.crear_esquema()
-        log.info("esquema creado")
-        return 0
-
-    servicio = construir_servicio(cfg, repo)
-
+    # "tiendas" y "descubrir" no tocan la base: se resuelven antes de
+    # abrir conexion, para que sigan funcionando con la base apagada.
     if args.comando == "tiendas":
-        for t in servicio.tiendas():
+        for t in _TIENDAS:
             sm = sitemap_de(cfg, t)
             print(f"{t}\t{'sitemap disponible' if sm else 'sin sitemap: hay que dar las URLs'}")
         return 0
@@ -186,6 +191,18 @@ def main(argv: list[str] | None = None) -> int:
         for u in _solo_fichas(args.tienda, crudas)[: args.limite]:
             print(u)
         return 0
+
+    repo = construir_repositorio(cfg)
+
+    if args.comando == "esquema":
+        if not hasattr(repo, "crear_esquema"):
+            log.error("el esquema solo se puede crear contra PostgreSQL")
+            return 2
+        repo.crear_esquema()
+        log.info("esquema creado")
+        return 0
+
+    servicio = construir_servicio(cfg, repo)
 
     resultado = servicio.ejecutar(args.tienda, leer_urls(args, cfg))
     print(resultado.resumen())
