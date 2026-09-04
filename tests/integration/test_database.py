@@ -18,7 +18,9 @@ import pytest
 
 from scraper.domain.product import Product
 
-URL = os.getenv("DATABASE_URL")
+# DATABASE_URL_REAL la fija tests/conftest.py antes de que el
+# aislamiento de las unitarias vacie DATABASE_URL.
+URL = os.getenv("DATABASE_URL_REAL") or os.getenv("DATABASE_URL")
 
 psycopg = pytest.importorskip("psycopg", reason="psycopg no instalado; pip install -e '.[db]'")
 pytestmark = pytest.mark.skipif(not URL, reason="DATABASE_URL no definida")

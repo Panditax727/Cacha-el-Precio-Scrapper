@@ -110,3 +110,33 @@ def test_las_tiendas_sin_filtro_devuelven_todo():
 
     urls = ["https://www.falabella.com/falabella-cl/product/1/x/2"]
     assert FalabellaScraper.urls_de_producto(urls) == urls
+
+
+def test_precio_cero_se_trata_como_sin_precio():
+    """
+    Sparta publica product:price:amount=0 en los productos agotados.
+    Guardarlos con precio 0 los dejaria apareciendo como los mas
+    baratos de toda la web. Sin precio real, no se guarda.
+    """
+    agotado = """
+    <html><head>
+      <meta property="og:title" content="Zapatilla agotada">
+      <meta property="og:url" content="https://sparta.cl/x-123.html">
+      <meta property="product:price:amount" content="0">
+      <meta property="product:price:currency" content="CLP">
+    </head></html>
+    """
+    assert SpartaParser().parse_product(agotado) is None
+
+
+def test_precio_valido_sigue_pasando():
+    """Control: la regla del 0 no debe descartar precios legitimos."""
+    ok = """
+    <html><head>
+      <meta property="og:title" content="Zapatilla">
+      <meta property="og:url" content="https://sparta.cl/x-123.html">
+      <meta property="product:price:amount" content="1">
+    </head></html>
+    """
+    p = SpartaParser().parse_product(ok)
+    assert p is not None and p.price == 1

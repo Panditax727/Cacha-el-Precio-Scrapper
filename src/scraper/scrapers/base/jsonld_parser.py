@@ -162,9 +162,14 @@ class ParserJsonLd:
         if crudo is None:
             return None
         try:
-            return round(float(str(crudo).replace(",", "")))
+            precio = round(float(str(crudo).replace(",", "")))
         except ValueError:
             return None
+        # Un 0 en un catalogo de tienda no significa "gratis": significa
+        # "sin precio publicado". Sparta lo hace con los productos
+        # agotados, y guardarlos con precio 0 los dejaria apareciendo
+        # como los mas baratos de toda la web. Sin precio, no se guarda.
+        return precio if precio > 0 else None
 
     def _moneda(self, oferta: dict[str, Any], og: dict[str, str]) -> str:
         return (

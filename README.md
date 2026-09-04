@@ -134,13 +134,23 @@ tres tiendas permitidas lo aceptan sin problema.
 ## Desarrollo
 
 ```bash
-pytest              # 59 pruebas, sin red
+pytest              # 66 pruebas (61 sin red + 5 contra PostgreSQL)
 ruff check .
 mypy
 ```
 
 Las pruebas de integracion (`tests/integration/`) se saltan solas si no
-hay `DATABASE_URL`.
+hay `DATABASE_URL`. Con la base levantada corren de verdad:
+
+```bash
+docker compose up -d db
+DATABASE_URL=postgresql://cacha:cacha@localhost:5432/cacha_el_precio pytest
+```
+
+Las unitarias estan aisladas de la base: `tests/unit/conftest.py` vacia
+`DATABASE_URL` para que la API caiga al repositorio en memoria. Sin eso,
+importar el modulo de pruebas de la API abria una conexion real y las
+pruebas escribian sus datos de mentira en la base de verdad.
 
 ## Que falta
 
