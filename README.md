@@ -4,6 +4,15 @@ Microservicio de scraping en Python. Recoge productos y precios de
 tiendas chilenas, los guarda en PostgreSQL con historial de precios, y
 expone una API minima para el backend Micronaut.
 
+El catalogo acepta unicamente productos identificables como ropa o
+calzado. Los productos ambiguos y categorias como electronica, hogar,
+toallas o billeteras se descartan antes de persistirlos.
+
+Cuando `AWS_S3_BUCKET` esta configurado, cada imagen se valida y se convierte
+a dos WebP: 400 px para tarjetas y 800 px para detalle. Se suben a S3 con una
+clave versionada por hash y cache inmutable; PostgreSQL guarda las URLs y las
+claves, nunca el binario. Un fallo de imagen no impide guardar el producto.
+
 Los diagramas de arquitectura estan en [README.arquitectura.md](README.arquitectura.md).
 
 ## Como funciona
@@ -22,7 +31,7 @@ API responde `202 Accepted` y trabaja en segundo plano.
 
 ```bash
 python -m venv .venv && source .venv/bin/activate
-pip install -e ".[api,db,dev]"
+pip install -e ".[api,db,s3,imagen,dev]"
 cp .env.example .env          # y rellena DATABASE_URL
 
 docker compose up -d db       # PostgreSQL local

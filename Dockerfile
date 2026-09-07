@@ -21,8 +21,8 @@ WORKDIR /app
 COPY pyproject.toml README.md ./
 COPY src/ ./src/
 
-# [api] y [db] porque la imagen sirve tanto para el job como para la API.
-RUN pip install --no-cache-dir -e ".[api,db]"
+# La misma imagen sirve para API, job, PostgreSQL y procesamiento/subida de imagenes.
+RUN pip install --no-cache-dir -e ".[api,db,s3,imagen]"
 
 # Usuario sin privilegios: un scraper procesa HTML de terceros y no
 # tiene ningun motivo para correr como root.
