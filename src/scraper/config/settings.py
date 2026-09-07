@@ -46,11 +46,15 @@ class Settings(BaseSettings):
     # --- imagenes ---
     image_max_width: int = 800
     image_max_height: int = 800
+    image_card_size: int = Field(default=400, ge=1)
+    image_max_download_bytes: int = Field(default=8 * 1024 * 1024, ge=1024)
+    image_max_pixels: int = Field(default=40_000_000, ge=1)
     image_webp_quality: int = Field(default=82, ge=1, le=100)
 
     # --- almacenamiento S3 ---
     aws_region: str = "us-east-1"
     aws_s3_bucket: str | None = None
+    aws_s3_public_base_url: str | None = None
     aws_access_key_id: str | None = None
     aws_secret_access_key: str | None = None
 
@@ -84,6 +88,14 @@ class Settings(BaseSettings):
     @property
     def es_produccion(self) -> bool:
         return self.app_env.lower() in {"production", "prod"}
+
+    @property
+    def s3_public_base_url(self) -> str | None:
+        if self.aws_s3_public_base_url:
+            return self.aws_s3_public_base_url.rstrip("/")
+        if self.aws_s3_bucket:
+            return f"https://{self.aws_s3_bucket}.s3.{self.aws_region}.amazonaws.com"
+        return None
 
 
 @lru_cache

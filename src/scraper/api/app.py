@@ -20,14 +20,16 @@ y dejaria la conexion colgada. Se lanza en segundo plano y se responde
 from __future__ import annotations
 
 import logging
+from threading import Lock
 from typing import Any
 
 from fastapi import BackgroundTasks, FastAPI, HTTPException, Query
 
 from scraper.config.settings import get_settings
+from scraper.domain.clothing import es_vestimenta
 from scraper.infrastructure.http.client import HttpClient
 from scraper.infrastructure.http.sitemap import leer_sitemap
-from scraper.main import construir_repositorio, construir_servicio, sitemap_de
+from scraper.main import _solo_fichas, construir_repositorio, construir_servicio, sitemap_de
 
 log = logging.getLogger(__name__)
 
@@ -46,6 +48,7 @@ _servicio = construir_servicio(_cfg, _repo)
 # Ultimo resultado por tienda, para poder consultar como fue el barrido
 # que se lanzo en segundo plano.
 _ultimo: dict[str, dict[str, Any]] = {}
+_barrido_lock = Lock()
 
 
 @app.get("/health", summary="Sonda de vida")
@@ -69,14 +72,21 @@ def tiendas() -> list[dict[str, Any]]:
 def _barrer(tienda: str, urls: list[str]) -> None:
     """Se ejecuta en segundo plano; guarda el resultado para /status."""
     try:
-        r = _servicio.ejecutar(tienda, urls)
+        # El repositorio PostgreSQL comparte una conexion. Serializar los
+        # barridos evita mezclar transacciones de dos peticiones simultaneas.
+        with _barrido_lock:
+            r = _servicio.ejecutar(tienda, urls)
         _ultimo[tienda] = {
             "resumen": r.resumen(),
             "urls_pedidas": r.urls_pedidas,
             "guardados": r.guardados,
             "cambios_de_precio": r.cambios_de_precio,
+            "productos_descartados": r.productos_descartados,
+            "imagenes_procesadas": r.imagenes_procesadas,
             "sin_producto": len(r.sin_producto),
             "fallos_de_descarga": len(r.urls_fallidas),
+            "fallos_de_guardado": len(r.errores_guardado),
+            "fallos_de_imagen": len(r.errores_imagen),
             "segundos": round(r.segundos, 1),
         }
     except Exception as e:
@@ -101,7 +111,8 @@ def scrape(
         )
 
     http = HttpClient(timeout=_cfg.http_timeout, user_agent=_cfg.http_user_agent)
-    urls = leer_sitemap(url_sitemap, http, max_urls=limite)
+    crudas = leer_sitemap(url_sitemap, http, max_urls=limite * 4)
+    urls = _solo_fichas(tienda, crudas)[:limite]
     if not urls:
         raise HTTPException(502, "el sitemap no devolvio ninguna URL")
 
@@ -121,7 +132,7 @@ def estado_barrido(tienda: str) -> dict[str, Any]:
 @app.get("/productos/{tienda}/{external_id}", summary="Un producto")
 def producto(tienda: str, external_id: str) -> dict[str, Any]:
     p = _repo.obtener(tienda, external_id)
-    if p is None:
+    if p is None or not es_vestimenta(p):
         raise HTTPException(404, "producto no encontrado")
     return p.model_dump(mode="json")
 
@@ -132,4 +143,7 @@ def historial(
     external_id: str,
     limite: int = Query(100, ge=1, le=1000),
 ) -> list[dict[str, Any]]:
+    p = _repo.obtener(tienda, external_id)
+    if p is None or not es_vestimenta(p):
+        raise HTTPException(404, "producto no encontrado")
     return [o.model_dump(mode="json") for o in _repo.historial(tienda, external_id, limite)]

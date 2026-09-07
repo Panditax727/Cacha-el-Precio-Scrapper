@@ -68,7 +68,6 @@ def construir_repositorio(cfg: Settings):
         # Un job por cron deja esto en su log. Una traza de Python de 15
         # lineas no dice que hacer; este mensaje si.
         log.error("no se pudo conectar a PostgreSQL: %s", str(e).splitlines()[0])
-        log.error("  DATABASE_URL = %s", cfg.database_url)
         log.error("  Si usas el compose:  docker compose up -d db")
         raise SystemExit(3) from None
     return RepositorioPostgres(conexion)
@@ -88,7 +87,39 @@ def construir_servicio(cfg: Settings, repo) -> ScraperService:
         "hites": HitesScraper(http, delay=demora, reintentos=reintentos),
         "sparta": SpartaScraper(http, delay=demora, reintentos=reintentos),
     }
-    return ScraperService(scrapers, repo)
+    image_service = None
+    if cfg.aws_s3_bucket:
+        try:
+            from scraper.image.downloader import ImageDownloader
+            from scraper.image.processor import ImageProcessor
+            from scraper.image.service import ProductImageService
+            from scraper.infrastructure.storage.storage import S3ImageStorage
+        except ModuleNotFoundError:
+            log.error('faltan dependencias de imagen/S3. Instala: pip install -e ".[s3,imagen]"')
+            raise SystemExit(2) from None
+
+        public_base_url = cfg.s3_public_base_url
+        assert public_base_url is not None
+        image_service = ProductImageService(
+            ImageDownloader(
+                timeout=cfg.http_timeout,
+                user_agent=cfg.http_user_agent,
+                max_bytes=cfg.image_max_download_bytes,
+            ),
+            ImageProcessor(
+                card_size=cfg.image_card_size,
+                detail_width=cfg.image_max_width,
+                detail_height=cfg.image_max_height,
+                quality=cfg.image_webp_quality,
+                max_pixels=cfg.image_max_pixels,
+            ),
+            S3ImageStorage(
+                cfg.aws_s3_bucket,
+                public_base_url,
+                region=cfg.aws_region,
+            ),
+        )
+    return ScraperService(scrapers, repo, delay=demora, image_service=image_service)
 
 
 # De donde saca cada tienda sus URLs de producto.
@@ -208,7 +239,8 @@ def main(argv: list[str] | None = None) -> int:
     print(resultado.resumen())
     # Que fallen todas suele significar que la tienda cambio o que no
     # hay red; eso si merece marcar el job como fallido.
-    return 1 if resultado.urls_pedidas and resultado.urls_ok == 0 else 0
+    fallo_total = resultado.urls_pedidas and resultado.urls_ok == 0
+    return 1 if fallo_total or resultado.errores_guardado else 0
 
 
 if __name__ == "__main__":

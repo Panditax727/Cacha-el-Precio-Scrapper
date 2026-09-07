@@ -15,6 +15,7 @@ from __future__ import annotations
 
 from typing import Protocol
 
+from scraper.domain.clothing import es_vestimenta
 from scraper.domain.offer import Offer
 from scraper.domain.product import Product
 
@@ -54,6 +55,8 @@ class RepositorioEnMemoria:
         self._historial: dict[tuple[str, str], list[Offer]] = {}
 
     def guardar(self, producto: Product) -> bool:
+        if not es_vestimenta(producto):
+            raise ValueError(f"producto fuera de vestimenta: {producto.product_url}")
         clave = producto.clave
         anterior = self._productos.get(clave)
         self._productos[clave] = producto

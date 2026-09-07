@@ -29,7 +29,15 @@ class Product(BaseModel):
 
     description: str | None = None
     currency: str = "CLP"
+    # La fuente pertenece a la tienda. Las demas URLs y claves apuntan a
+    # nuestras copias WebP en S3.
+    source_image_url: str | None = None
     image_url: str | None = None
+    image_card_url: str | None = None
+    image_detail_url: str | None = None
+    image_card_key: str | None = None
+    image_detail_key: str | None = None
+    image_hash: str | None = None
     available: bool = True
 
     # Cuando se observo. Sin esto no hay forma de saber si un precio es

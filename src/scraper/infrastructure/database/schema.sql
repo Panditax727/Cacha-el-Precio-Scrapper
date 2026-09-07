@@ -14,7 +14,13 @@ CREATE TABLE IF NOT EXISTS products (
     currency     TEXT        NOT NULL DEFAULT 'CLP',
     product_url  TEXT        NOT NULL,
     description  TEXT,
-    image_url    TEXT,
+    source_image_url TEXT,
+    image_url        TEXT,
+    image_card_url   TEXT,
+    image_detail_url TEXT,
+    image_card_key   TEXT,
+    image_detail_key TEXT,
+    image_hash       TEXT,
     available    BOOLEAN     NOT NULL DEFAULT TRUE,
     scraped_at   TIMESTAMPTZ NOT NULL,
 
@@ -22,6 +28,14 @@ CREATE TABLE IF NOT EXISTS products (
     -- en dos tiendas son dos filas distintas y eso es intencionado.
     PRIMARY KEY (store, external_id)
 );
+
+-- Migracion idempotente para instalaciones creadas antes del pipeline de imagenes.
+ALTER TABLE products ADD COLUMN IF NOT EXISTS source_image_url TEXT;
+ALTER TABLE products ADD COLUMN IF NOT EXISTS image_card_url TEXT;
+ALTER TABLE products ADD COLUMN IF NOT EXISTS image_detail_url TEXT;
+ALTER TABLE products ADD COLUMN IF NOT EXISTS image_card_key TEXT;
+ALTER TABLE products ADD COLUMN IF NOT EXISTS image_detail_key TEXT;
+ALTER TABLE products ADD COLUMN IF NOT EXISTS image_hash TEXT;
 
 CREATE TABLE IF NOT EXISTS price_history (
     id           BIGSERIAL   PRIMARY KEY,

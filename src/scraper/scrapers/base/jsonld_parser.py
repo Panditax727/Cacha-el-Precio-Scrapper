@@ -56,7 +56,7 @@ class ParserJsonLd:
             store=self.STORE,
             description=self._texto(datos.get("description")) or og.get("og:description"),
             currency=self._moneda(oferta, og),
-            image_url=self._imagen(datos) or og.get("og:image"),
+            source_image_url=self._imagen(datos) or og.get("og:image"),
             available=self._disponible(oferta),
         )
 

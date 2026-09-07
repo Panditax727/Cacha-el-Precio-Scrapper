@@ -12,6 +12,7 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any
 
+from scraper.domain.clothing import es_vestimenta
 from scraper.domain.offer import Offer
 from scraper.domain.product import Product
 
@@ -20,10 +21,13 @@ ESQUEMA = Path(__file__).parents[1] / "schema.sql"
 _UPSERT = """
 INSERT INTO products (
     store, external_id, name, brand, price, currency,
-    product_url, description, image_url, available, scraped_at
+    product_url, description, source_image_url, image_url, image_card_url,
+    image_detail_url, image_card_key, image_detail_key, image_hash, available, scraped_at
 ) VALUES (
     %(store)s, %(external_id)s, %(name)s, %(brand)s, %(price)s, %(currency)s,
-    %(product_url)s, %(description)s, %(image_url)s, %(available)s, %(scraped_at)s
+    %(product_url)s, %(description)s, %(source_image_url)s, %(image_url)s,
+    %(image_card_url)s, %(image_detail_url)s, %(image_card_key)s,
+    %(image_detail_key)s, %(image_hash)s, %(available)s, %(scraped_at)s
 )
 ON CONFLICT (store, external_id) DO UPDATE SET
     name        = EXCLUDED.name,
@@ -32,7 +36,13 @@ ON CONFLICT (store, external_id) DO UPDATE SET
     currency    = EXCLUDED.currency,
     product_url = EXCLUDED.product_url,
     description = EXCLUDED.description,
+    source_image_url = EXCLUDED.source_image_url,
     image_url   = EXCLUDED.image_url,
+    image_card_url = EXCLUDED.image_card_url,
+    image_detail_url = EXCLUDED.image_detail_url,
+    image_card_key = EXCLUDED.image_card_key,
+    image_detail_key = EXCLUDED.image_detail_key,
+    image_hash = EXCLUDED.image_hash,
     available   = EXCLUDED.available,
     scraped_at  = EXCLUDED.scraped_at
 """
@@ -49,7 +59,8 @@ VALUES (%(store)s, %(external_id)s, %(price)s, %(currency)s, %(available)s, %(sc
 
 _SELECT_PRODUCTO = """
 SELECT store, external_id, name, brand, price, currency,
-       product_url, description, image_url, available, scraped_at
+       product_url, description, source_image_url, image_url, image_card_url,
+       image_detail_url, image_card_key, image_detail_key, image_hash, available, scraped_at
 FROM products
 WHERE store = %(store)s AND external_id = %(external_id)s
 """
@@ -81,18 +92,24 @@ class RepositorioPostgres:
         de historial. Todo en una transaccion: o se guardan los dos o
         ninguno, para que el historial nunca contradiga al producto.
         """
+        if not es_vestimenta(producto):
+            raise ValueError(f"producto fuera de vestimenta: {producto.product_url}")
         datos = producto.model_dump()
-        with self._con.cursor() as cur:
-            cur.execute(_PRECIO_ANTERIOR, {"store": producto.store,
-                                           "external_id": producto.external_id})
-            fila = cur.fetchone()
-            cambio = fila is None or fila[0] != producto.price or fila[1] != producto.available
+        try:
+            with self._con.cursor() as cur:
+                cur.execute(_PRECIO_ANTERIOR, {"store": producto.store,
+                                               "external_id": producto.external_id})
+                fila = cur.fetchone()
+                cambio = fila is None or fila[0] != producto.price or fila[1] != producto.available
 
-            cur.execute(_UPSERT, datos)
-            if cambio:
-                cur.execute(_INSERTA_HISTORIAL, datos)
-        self._con.commit()
-        return cambio
+                cur.execute(_UPSERT, datos)
+                if cambio:
+                    cur.execute(_INSERTA_HISTORIAL, datos)
+            self._con.commit()
+            return cambio
+        except Exception:
+            self._con.rollback()
+            raise
 
     def obtener(self, store: str, external_id: str) -> Product | None:
         with self._con.cursor() as cur:
@@ -100,8 +117,12 @@ class RepositorioPostgres:
             fila = cur.fetchone()
         if fila is None:
             return None
-        campos = ("store", "external_id", "name", "brand", "price", "currency",
-                  "product_url", "description", "image_url", "available", "scraped_at")
+        campos = (
+            "store", "external_id", "name", "brand", "price", "currency",
+            "product_url", "description", "source_image_url", "image_url",
+            "image_card_url", "image_detail_url", "image_card_key", "image_detail_key",
+            "image_hash", "available", "scraped_at",
+        )
         return Product(**dict(zip(campos, fila, strict=True)))
 
     def historial(self, store: str, external_id: str, limite: int = 100) -> list[Offer]:
