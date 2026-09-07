@@ -64,6 +64,26 @@ def test_guardar_y_recuperar(repo):
     assert p.price == 79990 and p.brand == "Marca" and p.available is True
 
 
+def test_guarda_referencias_de_imagen_procesada(repo):
+    p = producto().model_copy(update={
+        "source_image_url": "https://cdn.example/original.jpg",
+        "image_url": "https://bucket.example/products/test/detail.webp",
+        "image_card_url": "https://bucket.example/products/test/card.webp",
+        "image_detail_url": "https://bucket.example/products/test/detail.webp",
+        "image_card_key": "products/test/card.webp",
+        "image_detail_key": "products/test/detail.webp",
+        "image_hash": "a" * 64,
+    })
+    repo.guardar(p)
+
+    stored = repo.obtener("pruebas", "TEST-1")
+    assert stored is not None
+    assert stored.source_image_url == p.source_image_url
+    assert stored.image_card_key == p.image_card_key
+    assert stored.image_detail_url == p.image_detail_url
+    assert stored.image_hash == p.image_hash
+
+
 def test_upsert_no_duplica_el_producto(repo):
     repo.guardar(producto(79990, minutos=0))
     repo.guardar(producto(69990, minutos=1))

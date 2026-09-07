@@ -89,6 +89,121 @@ def test_segundo_barrido_sin_cambios_no_cuenta_cambios_de_precio():
     assert len(repo.historial("converse", "A1")) == 1
 
 
+def test_descarta_productos_que_no_son_vestimenta():
+    repo = RepositorioEnMemoria()
+    control = prod("PS5").model_copy(update={"name": "Control PS5 DualSense"})
+    s = ScraperService({"converse": ScraperFalso({"u1": [control]})}, repo)
+
+    r = s.ejecutar("converse", ["u1"])
+
+    assert r.productos_extraidos == 1
+    assert r.productos_descartados == 1
+    assert r.guardados == 0
+    assert len(repo) == 0
+
+
+def test_reporta_fallos_de_guardado():
+    class RepoRoto:
+        def guardar(self, producto):
+            raise RuntimeError("base no disponible")
+
+    s = ScraperService({"converse": ScraperFalso({"u1": [prod("A1")]})}, RepoRoto())
+    r = s.ejecutar("converse", ["u1"])
+
+    assert r.guardados == 0
+    assert r.errores_guardado == ["converse/A1"]
+    assert "1 fallos de guardado" in r.resumen()
+
+
+def test_respeta_el_retardo_entre_urls(monkeypatch):
+    pausas = []
+    monkeypatch.setattr("scraper.services.scraper_service.time.sleep", pausas.append)
+    sc = ScraperFalso({"u1": [prod("A1")], "u2": [prod("A2")]})
+
+    ScraperService({"converse": sc}, RepositorioEnMemoria(), delay=1.5).ejecutar(
+        "converse", ["u1", "u2"]
+    )
+
+    assert pausas == [1.5]
+
+
+def test_fallo_de_imagen_no_pierde_el_producto():
+    class ImagenRota:
+        def process(self, product, previous=None):
+            raise RuntimeError("S3 no disponible")
+
+    repo = RepositorioEnMemoria()
+    producto = prod("A1").model_copy(update={
+        "source_image_url": "https://cdn.example/image.jpg",
+    })
+    service = ScraperService(
+        {"converse": ScraperFalso({"u1": [producto]})},
+        repo,
+        image_service=ImagenRota(),
+    )
+
+    result = service.ejecutar("converse", ["u1"])
+
+    assert result.guardados == 1
+    assert result.errores_imagen == ["converse/A1"]
+    assert repo.obtener("converse", "A1") is not None
+
+
+def test_fallo_de_imagen_conserva_la_anterior_para_reintentar():
+    class ImagenRota:
+        def process(self, product, previous=None):
+            raise RuntimeError("S3 no disponible")
+
+    repo = RepositorioEnMemoria()
+    anterior = prod("A1").model_copy(update={
+        "source_image_url": "https://cdn.example/old.jpg",
+        "image_url": "https://bucket.example/old-detail.webp",
+        "image_card_url": "https://bucket.example/old-card.webp",
+        "image_detail_url": "https://bucket.example/old-detail.webp",
+        "image_card_key": "products/old-card.webp",
+        "image_detail_key": "products/old-detail.webp",
+        "image_hash": "a" * 64,
+    })
+    repo.guardar(anterior)
+    nuevo = prod("A1", 69990).model_copy(update={
+        "source_image_url": "https://cdn.example/new.jpg",
+    })
+    service = ScraperService(
+        {"converse": ScraperFalso({"u1": [nuevo]})},
+        repo,
+        image_service=ImagenRota(),
+    )
+
+    service.ejecutar("converse", ["u1"])
+
+    guardado = repo.obtener("converse", "A1")
+    assert guardado.source_image_url == anterior.source_image_url
+    assert guardado.image_detail_key == anterior.image_detail_key
+    assert guardado.price == 69990
+
+
+def test_fuente_ausente_no_borra_la_imagen_anterior():
+    repo = RepositorioEnMemoria()
+    anterior = prod("A1").model_copy(update={
+        "source_image_url": "https://cdn.example/old.jpg",
+        "image_url": "https://bucket.example/detail.webp",
+        "image_detail_url": "https://bucket.example/detail.webp",
+        "image_detail_key": "products/detail.webp",
+    })
+    repo.guardar(anterior)
+    service = ScraperService(
+        {"converse": ScraperFalso({"u1": [prod("A1", 69990)]})},
+        repo,
+        image_service=object(),
+    )
+
+    service.ejecutar("converse", ["u1"])
+
+    guardado = repo.obtener("converse", "A1")
+    assert guardado.image_detail_key == anterior.image_detail_key
+    assert guardado.price == 69990
+
+
 def test_detecta_la_bajada_de_precio():
     repo = RepositorioEnMemoria()
     sc = ScraperFalso({"u1": [prod("A1", 79990)]})

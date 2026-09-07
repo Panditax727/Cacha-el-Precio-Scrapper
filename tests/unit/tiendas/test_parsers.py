@@ -12,6 +12,7 @@ from pathlib import Path
 
 import pytest
 
+from scraper.domain.clothing import es_vestimenta
 from scraper.scrapers.hites.parser import HitesParser
 from scraper.scrapers.paris.parser import ParisParser
 from scraper.scrapers.ripley.parser import RipleyParser
@@ -58,6 +59,21 @@ def test_ripley_encuentra_el_product_dentro_de_graph():
     p = RipleyParser().parse_product(html_de("ripley"))
     assert p.name and p.price > 0
     assert "CONTROL" in p.name.upper()
+
+
+@pytest.mark.parametrize(
+    ("Parser", "tienda", "esperado"),
+    [
+        (ParisParser, "paris", True),
+        (RipleyParser, "ripley", False),
+        (HitesParser, "hites", False),
+        (SpartaParser, "sparta", False),
+    ],
+)
+def test_clasifica_las_fichas_reales(Parser, tienda, esperado):
+    producto = Parser().parse_product(html_de(tienda))
+    assert producto is not None
+    assert es_vestimenta(producto) is esperado
 
 
 def test_sparta_saca_sku_y_marca_del_bloque_de_analytics():

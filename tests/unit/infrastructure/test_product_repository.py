@@ -3,6 +3,8 @@
 
 from datetime import UTC, datetime, timedelta
 
+import pytest
+
 from scraper.domain.product import Product
 from scraper.infrastructure.database.repositories.product_repository import (
     RepositorioEnMemoria,
@@ -77,6 +79,17 @@ def test_producto_inexistente_devuelve_none():
     r = RepositorioEnMemoria()
     assert r.obtener("converse", "no-existe") is None
     assert r.historial("converse", "no-existe") == []
+
+
+def test_repositorio_rechaza_productos_fuera_de_vestimenta():
+    r = RepositorioEnMemoria()
+    control = producto().model_copy(update={
+        "name": "Control PS5 DualSense",
+        "product_url": "https://tienda.cl/control-ps5",
+    })
+
+    with pytest.raises(ValueError, match="fuera de vestimenta"):
+        r.guardar(control)
 
 
 def test_desempata_por_orden_de_insercion_si_la_fecha_coincide():

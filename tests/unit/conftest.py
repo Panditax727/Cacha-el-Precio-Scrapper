@@ -32,6 +32,7 @@ def _sin_base_de_datos_real() -> None:
 # ejecutase un fixture, el modulo de la API ya estaria importado y la
 # conexion ya estaria abierta.
 os.environ["DATABASE_URL"] = ""
+os.environ["AWS_S3_BUCKET"] = ""
 
 from scraper.config.settings import get_settings  # noqa: E402
 

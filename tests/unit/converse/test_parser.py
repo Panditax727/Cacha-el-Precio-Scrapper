@@ -36,7 +36,8 @@ def test_extrae_el_producto_completo(parser, html):
     assert p.store == "converse"
     assert p.brand == "Converse"
     assert p.product_url.startswith("https://www.converse.cl/")
-    assert p.image_url is not None and p.image_url.endswith(".jpg")
+    assert p.source_image_url is not None and p.source_image_url.endswith(".jpg")
+    assert p.image_url is None
     assert p.description
 
 
